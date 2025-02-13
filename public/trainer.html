@@ -10,7 +10,17 @@
 
     <body>
         <h2>Trainer Dashboard</h2>
+
+        <label for="sessionTime">Select Session Time:</label>
+        <select id="sessionTime">
+            <option value="">--Select Time--</option>
+        </select>
+
+        <button id="loadStudents">Load Students</button>
+
         <ul id="studentList"></ul>
+
+        <button id="saveAttendance">Save Attendance</button>
         <button id="logout">Logout</button>
 
         <script src="trainer.js"></script>

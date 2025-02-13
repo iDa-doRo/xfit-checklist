@@ -16,6 +16,9 @@ app.use(express.static("public"));
 
 const db = new sqlite3.Database("gym_attendance.db");
 
+// ✅ Health Check
+app.get("/test", (req, res) => res.json({ message: "✅ Server is running!" }));
+
 // ✅ USER LOGIN
 app.post("/login", (req, res) => {
     console.log("🔍 Login request received:", req.body);
@@ -26,6 +29,9 @@ app.post("/login", (req, res) => {
             console.log("❌ User not found:", email);
             return res.status(400).json({ error: "Invalid credentials" });
         }
+
+        console.log("🔑 Stored hashed password:", user.password);
+        console.log("🔑 Entered password:", password);
 
         const isMatch = await bcrypt.compare(password, user.password);
         console.log("🔑 Password match:", isMatch);
@@ -42,28 +48,60 @@ app.post("/login", (req, res) => {
     });
 });
 
-// ✅ FETCH STUDENTS FOR TRAINER
+
+
+// ✅ Trainer selects a session first
+app.get("/session-times", (req, res) => {
+    res.json(["10:00", "18:00", "20:00"]); // Predefined session times
+});
+
+// ✅ Fetch Students for a Specific Class & Session
 app.get("/students", (req, res) => {
-    const { classType } = req.query;
-    db.all("SELECT * FROM students WHERE class = ?", [classType], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(rows);
-    });
+    const { classType, sessionTime, date } = req.query;
+
+    if (!classType || !sessionTime || !date) {
+        return res.status(400).json({ error: "Missing required parameters." });
+    }
+
+    db.all(
+        `SELECT students.id, students.name, 
+        (SELECT status FROM attendance 
+         WHERE attendance.student_id = students.id 
+         AND attendance.class = ? 
+         AND attendance.session_time = ? 
+         AND attendance.date = ?) AS status 
+        FROM students 
+        JOIN student_classes ON students.id = student_classes.student_id
+        WHERE student_classes.class = ?`,
+        [classType, sessionTime, date, classType],
+        (err, rows) => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json(rows);
+        }
+    );
 });
 
-// ✅ SAVE ATTENDANCE
+// ✅ Save Attendance for the Entire Session
 app.post("/attendance", (req, res) => {
-    const { student_id, classType, date, time, status } = req.body;
+    const { trainer_id, classType, sessionTime, date, attendanceRecords } = req.body;
 
-    db.run("INSERT INTO attendance (student_id, class, date, time, status) VALUES (?, ?, ?, ?, ?)",
-        [student_id, classType, date, time, status],
-        function (err) {
-            if (err) return res.status(500).json({ error: "Failed to save attendance" });
-            res.json({ message: "Attendance saved!" });
-        });
+    if (!trainer_id || !classType || !sessionTime || !date || !attendanceRecords) {
+        return res.status(400).json({ error: "Missing required fields." });
+    }
+
+    const stmt = db.prepare(
+        "INSERT INTO attendance (trainer_id, class, session_time, student_id, date, status) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(student_id, class, session_time, date) DO UPDATE SET status = excluded.status"
+    );
+
+    attendanceRecords.forEach(({ student_id, status }) => {
+        stmt.run(trainer_id, classType, sessionTime, student_id, date, status);
+    });
+
+    stmt.finalize();
+    res.json({ message: "Attendance saved successfully!" });
 });
 
-// ✅ EXPORT ATTENDANCE (ADMIN ONLY)
+// ✅ Export Attendance (Admin Only)
 app.get("/export-attendance", (req, res) => {
     db.all("SELECT * FROM attendance", [], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -71,9 +109,9 @@ app.get("/export-attendance", (req, res) => {
     });
 });
 
-// ✅ SERVE FRONTEND
+// ✅ Serve Frontend
 app.get("/", (req, res) => {
     res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-app.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));
+app.listen(5050, () => console.log("🚀 Server running on http://localhost:5050"));
